@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.git/
+.vscode/
+.python-version
+runtime.txt
+nixpacks.toml
+.gitignore
+README.md
