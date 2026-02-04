@@ -14,6 +14,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
@@ -38,6 +39,86 @@ app = FastAPI(
     description="Audio Transcription with Speaker Diarization",
     version="1.0.0"
 )
+# Initialize placeholders
+tts_model = None
+whisper_model = None
+executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+
+
+def load_models():
+    """Load TTS and Whisper models with robust logging and LFS checks"""
+    global tts_model, whisper_model
+    
+    print("--- Model Loading Starting ---")
+    print(f"Target Device: {DEVICE}")
+    print(f"Compute Type: {COMPUTE_TYPE}")
+    print(f"Models Path: {os.path.abspath(MODELS_PATH)}")
+    
+    try:
+        # 1. Load Whisper Model
+        print("Loading Whisper model (base)...")
+        whisper_model = WhisperModel("base", device=DEVICE, compute_type=COMPUTE_TYPE)
+        print("✅ Whisper model loaded successfully")
+        
+        # 2. Check XTTS Checkpoint
+        print(f"Checking XTTS checkpoint at: {XTTS_CHECKPOINT}")
+        if not os.path.exists(XTTS_CHECKPOINT):
+            print(f"❌ ERROR: XTTS checkpoint not found at {XTTS_CHECKPOINT}")
+            raise FileNotFoundError(f"XTTS model checkpoint not found at {XTTS_CHECKPOINT}")
+            
+        # Verify LFS files (not just pointer files)
+        model_pth_path = os.path.join(XTTS_CHECKPOINT, "model.pth")
+        if os.path.exists(model_pth_path):
+            file_size_gb = os.path.getsize(model_pth_path) / (1024**3)
+            print(f"Model file size: {file_size_gb:.2f} GB")
+            if file_size_gb < 0.1:  # Pointer files are very small
+                print("⚠️ WARNING: model.pth seems to be a Git LFS pointer file, not the actual weights.")
+                print("Fix: Ensure GIT_LFS_SKIP_SMUDGE=0 is set in your environment variables.")
+        
+        # 3. Load TTS model for speaker embeddings
+        print("Setting up TTS model config...")
+        config_path = os.path.join(XTTS_CHECKPOINT, "config.json")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file not found at {config_path}")
+            
+        config = load_config(config_path)
+        tts_model = setup_tts_model(config)
+        
+        print("Loading TTS checkpoint weights...")
+        tts_model.load_checkpoint(
+            config, 
+            checkpoint_dir=XTTS_CHECKPOINT, 
+            eval=True
+        )
+        
+        print(f"Moving TTS model to {DEVICE}...")
+        tts_model.to(DEVICE)
+        print("✅ TTS model loaded successfully")
+        print("--- All models ready for inference ---")
+        
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR during model loading: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Modern lifespan manager for setup and cleanup"""
+    load_models()
+    yield
+    print("Shutting down: cleaning up executor")
+    executor.shutdown(wait=True)
+
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="WhoSpeaks API",
+    description="Audio Transcription with Speaker Diarization",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Configure CORS to allow all domains
 app.add_middleware(
@@ -47,41 +128,6 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers
 )
-
-# Global Model Holders
-tts_model = None
-whisper_model = None
-executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
-
-
-def load_models():
-    """Load TTS and Whisper models on startup"""
-    global tts_model, whisper_model
-    print("Loading models...")
-    
-    try:
-        # Load Whisper model
-        whisper_model = WhisperModel("base", device=DEVICE, compute_type=COMPUTE_TYPE)
-        print("Whisper model loaded successfully")
-        
-        # Load TTS model for speaker embeddings
-        if not os.path.exists(XTTS_CHECKPOINT):
-            raise FileNotFoundError(f"TTS model checkpoint not found at {XTTS_CHECKPOINT}")
-        
-        config = load_config(os.path.join(XTTS_CHECKPOINT, "config.json"))
-        tts_model = setup_tts_model(config)
-        tts_model.load_checkpoint(
-            config, 
-            checkpoint_dir=XTTS_CHECKPOINT, 
-            eval=True
-        )
-        tts_model.to(DEVICE)
-        print("TTS model loaded successfully")
-        print("All models ready.")
-        
-    except Exception as e:
-        print(f"Error loading models: {str(e)}")
-        raise
 
 
 def extract_embedding_sync(audio_path: str) -> np.ndarray:
@@ -98,16 +144,7 @@ def extract_embedding_sync(audio_path: str) -> np.ndarray:
         raise
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Load models when the application starts"""
-    load_models()
 
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    executor.shutdown(wait=True)
 
 
 @app.get("/")

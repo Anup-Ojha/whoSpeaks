@@ -188,7 +188,23 @@ The project uses a minimal set of dependencies:
 
 All other dependencies are automatically installed as transitive dependencies.
 
+## Production Deployment (Railway)
+
+To deploy successfully on Railway, ensure the following configurations:
+
+1. **Environment Variables**:
+   - `GIT_LFS_SKIP_SMUDGE = 0`: **Critical** - Forces Railway to download the actual model weights (1.77GB) instead of Git LFS pointer files.
+   - `DEVICE = cpu`: Cloud containers usually don't have GPUs unless specifically configured.
+   - `COMPUTE_TYPE = int8`: Recommended for CPU environments to save RAM and increase speed.
+   - `PORT`: Set automatically by Railway.
+
+2. **Resources**:
+   - **RAM**: At least 4GB (8GB recommended) to hold both Whisper and XTTS models in memory.
+
+3. **Deployment**:
+   - The repository includes a `railway.json` which configures the start command with `--timeout-keep-alive 300` to allow the heavy models enough time to load without causing a health check timeout.
+   - Ensure your `.gitattributes` is pushed to handle the `.pth` files via Git LFS.
+
 ## License
 
 This project was initially developed as a personal project and has been released for others to experiment with and improve upon. 
-# whoSpeaks
