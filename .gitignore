@@ -24,7 +24,6 @@ ENV/
 *.mp3
 *.log
 *.png
-*.json
 temp_*.wav
 incoming_*
 
