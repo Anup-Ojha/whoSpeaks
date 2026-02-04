@@ -1,54 +1,194 @@
 # WhoSpeaks
 
-*Toolkit for Enhanced Voice Training Datasets*
+*Audio Transcription with Speaker Diarization API*
 
-Note: realtime_diarize.py required changes to RealtimeSTT. Please upgrade to latest version.
+A FastAPI-based service that provides audio transcription with automatic speaker diarization. The API accepts audio files and returns transcribed segments with speaker labels.
 
-WhoSpeaks emerged from the need for better speaker diarization tools. Existing libraries are heavyweight and often fall short in reliability, speed and efficiency. So this project offers a more refined alternative.
+## Features
+
+- **Fast Transcription**: Uses faster-whisper for efficient audio transcription
+- **Speaker Diarization**: Automatically identifies and labels different speakers using TTS embeddings and clustering
+- **RESTful API**: Simple HTTP API for easy integration
+- **Minimal Dependencies**: Streamlined requirements with only essential packages
+- **Automatic Cleanup**: Temporary files are automatically removed after processing
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.8+
+- TTS model files in the `models/v2.0.2/` directory (or set `COQUI_MODEL_PATH` environment variable)
+
+### Installation
+
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
+   The requirements file contains only the essential dependencies:
+   - FastAPI and uvicorn for the API server
+   - faster-whisper for transcription
+   - TTS (Coqui TTS) for speaker embeddings
+   - librosa, numpy, scikit-learn for audio processing and clustering
+   - torch (required by TTS)
+
+2. **Set Environment Variables** (optional):
+   ```bash
+   # Windows
+   set COQUI_MODEL_PATH=models
+   set DEVICE=cpu
+   set COMPUTE_TYPE=int8
+   
+   # Linux/Mac
+   export COQUI_MODEL_PATH="models"
+   export DEVICE="cpu"  # or "cuda" for GPU
+   export COMPUTE_TYPE="int8"  # or "float16", "float32"
+   ```
+
+3. **Start the API Server**:
+   ```bash
+   python app.py
+   ```
+   
+   Or using uvicorn directly:
+   ```bash
+   uvicorn app:app --host 0.0.0.0 --port 8000
+   ```
+   
+   The API will be available at `http://localhost:8000`
+
+### Usage
+
+#### API Endpoints
+
+- `GET /` - API information and available endpoints
+- `GET /health` - Health check and model status
+- `POST /transcribe` - Main endpoint for transcription with speaker diarization
+
+#### Transcribe Audio
+
+**Endpoint**: `POST /transcribe`
+
+**Parameters**:
+- `file` (required): Audio file (supports common formats: wav, mp3, m4a, etc.)
+- `num_speakers` (optional): Integer specifying the number of speakers (auto-detected if not provided)
+
+**Example using curl**:
+```bash
+curl -X POST "http://localhost:8000/transcribe?num_speakers=2" \
+     -F "file=@your_audio_file.wav"
+```
+
+**Example using Python**:
+```python
+import requests
+
+with open("your_audio_file.wav", "rb") as f:
+    response = requests.post(
+        "http://localhost:8000/transcribe",
+        files={"file": f},
+        params={"num_speakers": 2}
+    )
+
+result = response.json()
+print(result)
+```
+
+**Response Format**:
+```json
+{
+  "status": "success",
+  "filename": "your_audio_file.wav",
+  "language": "en",
+  "language_probability": 0.99,
+  "num_segments": 10,
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.5,
+      "text": "Hello, how are you?",
+      "speaker": "Speaker 0"
+    },
+    {
+      "start": 2.5,
+      "end": 5.0,
+      "text": "I'm doing well, thank you.",
+      "speaker": "Speaker 1"
+    }
+  ]
+}
+```
+
+**Health Check**:
+```bash
+curl http://localhost:8000/health
+```
+
+## Project Structure
+
+```
+WhoSpeaks/
+├── app.py                      # FastAPI main application (primary entry point)
+├── requirements.txt            # Minimal dependencies (only essential packages)
+├── models/                     # TTS model files (v2.0.2)
+│   └── v2.0.2/
+│       ├── config.json
+│       ├── model.pth
+│       ├── speakers_xtts.pth
+│       └── vocab.json
+├── README.md                   # This file
+└── .gitignore                  # Git ignore file
+```
+
+## How It Works
+
+WhoSpeaks emerged from the need for better speaker diarization tools. Existing libraries are heavyweight and often fall short in reliability, speed and efficiency. This project offers a more refined alternative.
+
+The core concept:
 
 > **Hint:** *Anybody interested in state-of-the-art voice solutions please also <strong>have a look at [Linguflex](https://github.com/KoljaB/Linguflex)</strong>. It lets you control your environment by speaking and is one of the most capable and sophisticated open-source assistants currently available.*
 
-Here's the core concept:
-- **Voice Characteristic Extraction**: For each sentence in your audio, unique voice characteristics are extracted, creating audio embeddings.
-- **Sentence Similarity Comparison**: Then cosine similarity is used to compare these embeddings against every other sentence, identifying similarities.
-- **Grouping and Averaging**: Similar sounding sentences are grouped together. This approach averages out anomalies and minimizes errors from individual data points.
-- **Identification of Distinct Groups**: By analyzing these groups, we can isolate the most distinct ones, which represent unique speaker characteristics.
+1. **Transcription**: Audio is transcribed using faster-whisper, which segments the audio into text segments with timestamps.
 
-These steps allow us to match any sentence against the established speaker profiles with remarkable precision.
+2. **Voice Characteristic Extraction**: For each transcribed segment, unique voice characteristics are extracted using TTS embeddings, creating audio embeddings.
 
-### Feature Modules
+3. **Speaker Clustering**: The embeddings are normalized and clustered using K-Means to identify distinct speakers. Similar sounding segments are grouped together.
 
-- **fetch_youtube_mp3.py**: Extracts and converts YouTube audio, like podcasts, to MP3 for voice analysis.
-- **split_dataset.py**: This tool divides your input audio into distinct sentences.
-- **convert_wav.py**: Converts the sentence-based MP3 files into WAV format.
-- **auto_diarize.py**/**speaker_diarize.py**: Heart of WhoSpeaks. Categorizes sentences into speaker groups and selects training sentences based on the unique algorithm described above.
-- **pyannote_diarize.py**: Use for comparison against pyannote audio diarization, a current state of the art speaker diarization model
+4. **Speaker Assignment**: Each segment is assigned to a speaker based on its embedding similarity to the identified speaker clusters.
 
-> **Note**: *auto_diarize is for multiple speakers, speaker_diarize is for two speakers only*
-
-I initially developed this as a personal project, but was astounded by its effectiveness. In my first tests it outperformed existing solutions like pyannote audio in both reliability and speed while being the more lightweight approach. For me it could be a significant step up in voice diarization capabilities, that's why I've decided to release this rather raw, yet powerful code for others to experiment with.
-
-## Performance and Testing
-
-To demonstrate WhoSpeaks' capabilities, I made a test using a challenging audio sample: the 4:38 Coin Toss scene from "No Country for Old Men". In this scene, the two male speakers have very similar voice profiles, presenting a difficult scenario for diarization libraries.
-
-### Process:
-
-1. **Download**: Using `fetch_youtube_mp3.py`, download the MP3 from the scene's YouTube video.
-2. **Diarization Comparison**: Run the scene through `pyannote_diarize.py` (from pyannote audio) and set the speaker parameters to 2.
-   - Pyannote's output was inaccurate, assigning most sentences to one speaker incorrectly.
-3. **WhoSpeaks Analysis**: 
-   - **Sentence Splitting**: Use `split_dataset.py` with `tiny.en` for efficiency, though `large-v2` offers higher accuracy.
-   - **Conversion**: The MP3 segments are converted to WAV format using `convert_wav.py`.
-   - **Diarization**: Then run `auto_diarize.py` and visually inspect the dendrogram file to confirm the presence of two speakers.
-
-To run `auto_diarize.py` and `speaker_diarize.py` it is necessary to set the environment variable COQUI_MODEL_PATH to the path containing the "v2.0.2" model folder for coqui XTTS.
+This approach allows us to match any segment against the established speaker profiles with remarkable precision.
 
 
-### Results:
+## Performance
 
-- WhoSpeaks' algorithm assigned 53 sentences correctly to Javier Bardem's voice with only 2 minor errors.
-- Of the 33 sentences assigned to the other actor, only one was incorrect.
-- The overall error rate was approximately 3.5%, demonstrating a precision of about 95% in correctly assigning sentences.
+WhoSpeaks has been tested on challenging audio samples with similar voice profiles. In tests, it has demonstrated:
 
-The effectiveness of WhoSpeaks in this test, particularly against pyannote audio, showcases its potential in handling complex diarization scenarios with high accuracy and efficiency. 
+- **High Accuracy**: ~95% precision in speaker assignment
+- **Speed**: Efficient processing with parallel embedding extraction
+- **Reliability**: Outperforms heavyweight solutions like pyannote audio in both speed and accuracy
+
+The API automatically handles:
+- Audio format conversion
+- Segment filtering (removes segments shorter than 0.5 seconds)
+- Parallel processing for faster results
+- Automatic cleanup of temporary files
+
+## Dependencies
+
+The project uses a minimal set of dependencies:
+
+- **FastAPI** & **Uvicorn**: Web framework and ASGI server
+- **faster-whisper**: Fast and efficient Whisper transcription
+- **TTS (Coqui TTS)**: Speaker embedding extraction
+- **librosa**: Audio processing
+- **scikit-learn**: Clustering algorithms
+- **numpy**: Numerical operations
+- **torch**: Deep learning framework (required by TTS)
+
+All other dependencies are automatically installed as transitive dependencies.
+
+## License
+
+This project was initially developed as a personal project and has been released for others to experiment with and improve upon. 
+# whoSpeaks
