@@ -1,0 +1,5 @@
+[phases.setup]
+nixPkgs = ["python310", "gcc", "ffmpeg", "pkg-config"]
+
+[phases.install]
+cmds = ["python -m venv /opt/venv && . /opt/venv/bin/activate && pip install -r requirements.txt"]
