@@ -1,5 +1,22 @@
 [phases.setup]
-nixPkgs = ["python310", "gcc", "ffmpeg", "pkg-config"]
+aptPkgs = [
+    "python3.10",
+    "python3.10-venv",
+    "python3.10-dev",
+    "gcc",
+    "pkg-config",
+    "ffmpeg",
+    "libavcodec-dev",
+    "libavformat-dev",
+    "libavutil-dev",
+    "libswscale-dev",
+    "libswresample-dev",
+    "libavdevice-dev",
+    "libavfilter-dev"
+]
 
 [phases.install]
-cmds = ["python -m venv /opt/venv && . /opt/venv/bin/activate && pip install -r requirements.txt"]
+cmds = ["python3.10 -m venv /opt/venv && . /opt/venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"]
+
+[variables]
+PYTHON_VERSION = "3.10.13"
