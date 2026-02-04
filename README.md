@@ -1,210 +1,121 @@
-# WhoSpeaks
+# WhoSpeaks 🎙️
 
-*Audio Transcription with Speaker Diarization API*
+*High-Performance Audio Transcription with Speaker Diarization*
 
-A FastAPI-based service that provides audio transcription with automatic speaker diarization. The API accepts audio files and returns transcribed segments with speaker labels.
+WhoSpeaks is a robust FastAPI-based backend designed to provide state-of-the-art audio transcription and speaker identification. It is optimized for speed, accuracy, and ease of integration into modern frontend applications.
 
-## Features
+---
 
-- **Fast Transcription**: Uses faster-whisper for efficient audio transcription
-- **Speaker Diarization**: Automatically identifies and labels different speakers using TTS embeddings and clustering
-- **RESTful API**: Simple HTTP API for easy integration
-- **Minimal Dependencies**: Streamlined requirements with only essential packages
-- **Automatic Cleanup**: Temporary files are automatically removed after processing
+## 🏗️ How it Works: The Processing Pipeline
 
-## Quick Start
+WhoSpeaks follows a sophisticated four-stage pipeline to transform raw audio into structured, speaker-labeled text.
+
+### 1. Intelligence-Driven Transcription (Faster-Whisper)
+The system uses `faster-whisper`, a reimplementation of OpenAI’s Whisper model using CTranslate2. 
+- **The Magic:** It doesn't just transcribe; it identifies timestamps for every segment and sentence.
+- **Why it's better:** It's up to 4x faster than the original Whisper while using significantly less VRAM/RAM.
+
+### 2. Voice Characteristic Extraction (XTTS Embeddings)
+Once we have the text segments, we need to know *who* said them.
+- **The Process:** We slice the original audio into small chunks based on Whisper's timestamps.
+- **The Tech:** We use the `XTTS v2.0.2` encoder to extract a "Voice Fingerprint" (embedding vector) for each audio chunk. This fingerprint represents the unique pitch, tone, and resonance of the speaker.
+
+### 3. Dynamic Speaker Clustering (K-Means)
+With a collection of voice fingerprints, the system needs to group them.
+- **Normalization:** Fingerprints are passed through a `StandardScaler` to ensure consistency.
+- **Clustering:** We use `K-Means` clustering. If the user doesn't specify the number of speakers, the system intelligently analyzes the voice distribution to separate distinct personalities.
+
+### 4. Response Assembly
+The final output is a structured JSON object where every line of text is tagged with a speaker ID (e.g., "Speaker 0", "Speaker 1").
+
+---
+
+## 💻 Local Development Guide
 
 ### Prerequisites
+- **Python:** 3.9 or 3.10 is recommended.
+- **Hardware:** 8GB RAM minimum. A GPU (NVIDIA) is supported but not required.
+- **Models:** Ensure you have the XTTS v2 model weights in `models/v2.0.2/`.
 
-- Python 3.8+
-- TTS model files in the `models/v2.0.2/` directory (or set `COQUI_MODEL_PATH` environment variable)
-
-### Installation
-
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   
-   The requirements file contains only the essential dependencies:
-   - FastAPI and uvicorn for the API server
-   - faster-whisper for transcription
-   - TTS (Coqui TTS) for speaker embeddings
-   - librosa, numpy, scikit-learn for audio processing and clustering
-   - torch (required by TTS)
-
-2. **Set Environment Variables** (optional):
-   ```bash
-   # Windows
-   set COQUI_MODEL_PATH=models
-   set DEVICE=cpu
-   set COMPUTE_TYPE=int8
-   
-   # Linux/Mac
-   export COQUI_MODEL_PATH="models"
-   export DEVICE="cpu"  # or "cuda" for GPU
-   export COMPUTE_TYPE="int8"  # or "float16", "float32"
-   ```
-
-3. **Start the API Server**:
-   ```bash
-   python app.py
-   ```
-   
-   Or using uvicorn directly:
-   ```bash
-   uvicorn app:app --host 0.0.0.0 --port 8000
-   ```
-   
-   The API will be available at `http://localhost:8000`
-
-### Usage
-
-#### API Endpoints
-
-- `GET /` - API information and available endpoints
-- `GET /health` - Health check and model status
-- `POST /transcribe` - Main endpoint for transcription with speaker diarization
-
-#### Transcribe Audio
-
-**Endpoint**: `POST /transcribe`
-
-**Parameters**:
-- `file` (required): Audio file (supports common formats: wav, mp3, m4a, etc.)
-- `num_speakers` (optional): Integer specifying the number of speakers (auto-detected if not provided)
-
-**Example using curl**:
+### 1. Setup Environment
 ```bash
-curl -X POST "http://localhost:8000/transcribe?num_speakers=2" \
-     -F "file=@your_audio_file.wav"
+# Create a virtual environment
+python -m venv venv
+
+# Activate it
+# Windows:
+.\venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-**Example using Python**:
-```python
-import requests
-
-with open("your_audio_file.wav", "rb") as f:
-    response = requests.post(
-        "http://localhost:8000/transcribe",
-        files={"file": f},
-        params={"num_speakers": 2}
-    )
-
-result = response.json()
-print(result)
-```
-
-**Response Format**:
-```json
-{
-  "status": "success",
-  "filename": "your_audio_file.wav",
-  "language": "en",
-  "language_probability": 0.99,
-  "num_segments": 10,
-  "segments": [
-    {
-      "start": 0.0,
-      "end": 2.5,
-      "text": "Hello, how are you?",
-      "speaker": "Speaker 0"
-    },
-    {
-      "start": 2.5,
-      "end": 5.0,
-      "text": "I'm doing well, thank you.",
-      "speaker": "Speaker 1"
-    }
-  ]
-}
-```
-
-**Health Check**:
+### 2. Configuration (`.env`)
+Create a `.env` file or set these variables in your shell:
 ```bash
-curl http://localhost:8000/health
+DEVICE=cpu          # 'cuda' for NVIDIA GPU
+COMPUTE_TYPE=int8   # 'float16' for GPU, 'int8' for CPU
+COQUI_MODEL_PATH=models
+MAX_WORKERS=4       # Number of concurrent threads for embedding extraction
 ```
 
-## Project Structure
-
+### 3. Run the Server
+```bash
+python app.py
 ```
+Visit `http://localhost:8000/docs` to see the interactive API documentation.
+
+---
+
+## 🌐 Frontend Integration Guide
+
+The WhoSpeaks backend is designed to handle multipart form data, making it compatible with standard JavaScript `FormData` objects.
+
+### Typical Workflow
+1. **Record/Select Audio:** Capture audio from the user's microphone or file input.
+2. **Submit to API:** POST the file to `/transcribe`.
+3. **Display Results:** Map over the `segments` array to create a "Chat" style interface.
+
+### Example (JavaScript/React)
+```javascript
+const formData = new FormData();
+formData.append('file', audioBlob, 'recording.wav');
+if (numSpeakers) formData.append('num_speakers', 2);
+
+const response = await fetch('https://your-api.railway.app/transcribe', {
+  method: 'POST',
+  body: formData,
+});
+
+const data = await response.json();
+// data.segments will contain: { start, end, text, speaker }
+```
+
+---
+
+## 🚀 Production Deployment (Railway)
+
+WhoSpeaks is optimized for containerized environments like Railway.
+
+### Critical Deployment Settings
+- **Environment Variable:** `GIT_LFS_SKIP_SMUDGE = 0`. This is **mandatory**. Without it, Railway will only download a 1KB "pointer" file instead of the 1.77GB model weights.
+- **Memory (RAM):** 4GB is the absolute minimum; **8GB is recommended** for smooth processing of larger files.
+- **Health Checks:** The `railway.json` includes a `--timeout-keep-alive 300` flag. This gives the heavy AI models enough time to load into RAM before the server starts accepting traffic.
+
+---
+
+## 📂 Project Structure
+```text
 WhoSpeaks/
-├── app.py                      # FastAPI main application (primary entry point)
-├── requirements.txt            # Minimal dependencies (only essential packages)
-├── models/                     # TTS model files (v2.0.2)
-│   └── v2.0.2/
-│       ├── config.json
-│       ├── model.pth
-│       ├── speakers_xtts.pth
-│       └── vocab.json
-├── README.md                   # This file
-└── .gitignore                  # Git ignore file
+├── app.py              # Main Application Logic
+├── railway.json        # Production Config
+├── requirements.txt    # Python Packages
+├── models/
+│   └── v2.0.2/         # XTTS Model Weights (LFS)
+└── .gitattributes      # LFS configuration for .pth files
 ```
-
-## How It Works
-
-WhoSpeaks emerged from the need for better speaker diarization tools. Existing libraries are heavyweight and often fall short in reliability, speed and efficiency. This project offers a more refined alternative.
-
-The core concept:
-
-> **Hint:** *Anybody interested in state-of-the-art voice solutions please also <strong>have a look at [Linguflex](https://github.com/KoljaB/Linguflex)</strong>. It lets you control your environment by speaking and is one of the most capable and sophisticated open-source assistants currently available.*
-
-1. **Transcription**: Audio is transcribed using faster-whisper, which segments the audio into text segments with timestamps.
-
-2. **Voice Characteristic Extraction**: For each transcribed segment, unique voice characteristics are extracted using TTS embeddings, creating audio embeddings.
-
-3. **Speaker Clustering**: The embeddings are normalized and clustered using K-Means to identify distinct speakers. Similar sounding segments are grouped together.
-
-4. **Speaker Assignment**: Each segment is assigned to a speaker based on its embedding similarity to the identified speaker clusters.
-
-This approach allows us to match any segment against the established speaker profiles with remarkable precision.
-
-
-## Performance
-
-WhoSpeaks has been tested on challenging audio samples with similar voice profiles. In tests, it has demonstrated:
-
-- **High Accuracy**: ~95% precision in speaker assignment
-- **Speed**: Efficient processing with parallel embedding extraction
-- **Reliability**: Outperforms heavyweight solutions like pyannote audio in both speed and accuracy
-
-The API automatically handles:
-- Audio format conversion
-- Segment filtering (removes segments shorter than 0.5 seconds)
-- Parallel processing for faster results
-- Automatic cleanup of temporary files
-
-## Dependencies
-
-The project uses a minimal set of dependencies:
-
-- **FastAPI** & **Uvicorn**: Web framework and ASGI server
-- **faster-whisper**: Fast and efficient Whisper transcription
-- **TTS (Coqui TTS)**: Speaker embedding extraction
-- **librosa**: Audio processing
-- **scikit-learn**: Clustering algorithms
-- **numpy**: Numerical operations
-- **torch**: Deep learning framework (required by TTS)
-
-All other dependencies are automatically installed as transitive dependencies.
-
-## Production Deployment (Railway)
-
-To deploy successfully on Railway, ensure the following configurations:
-
-1. **Environment Variables**:
-   - `GIT_LFS_SKIP_SMUDGE = 0`: **Critical** - Forces Railway to download the actual model weights (1.77GB) instead of Git LFS pointer files.
-   - `DEVICE = cpu`: Cloud containers usually don't have GPUs unless specifically configured.
-   - `COMPUTE_TYPE = int8`: Recommended for CPU environments to save RAM and increase speed.
-   - `PORT`: Set automatically by Railway.
-
-2. **Resources**:
-   - **RAM**: At least 4GB (8GB recommended) to hold both Whisper and XTTS models in memory.
-
-3. **Deployment**:
-   - The repository includes a `railway.json` which configures the start command with `--timeout-keep-alive 300` to allow the heavy models enough time to load without causing a health check timeout.
-   - Ensure your `.gitattributes` is pushed to handle the `.pth` files via Git LFS.
 
 ## License
-
-This project was initially developed as a personal project and has been released for others to experiment with and improve upon. 
+Released for experimentation and professional use. Based on the faster-whisper and Coqui TTS ecosystems.
